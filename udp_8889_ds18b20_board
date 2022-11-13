@@ -1,0 +1,121 @@
+// UPS Host 
+ 
+//Declare libraries
+#include <ESP8266WiFi.h>
+
+
+// UDP Setup and Settings
+// ------------------------------------------------------------------------------------------------------------------------------------------------------------
+#include <WiFiUdp.h>
+WiFiUDP Udp;
+    unsigned int localPort = 8889;
+    char packetBuffer[UDP_TX_PACKET_MAX_SIZE + 1]; //buffer to hold incoming packet,
+    char udp_packet[80] = "Empty\r\n";       // a string to send back
+    String hardware_id = "ESP-234567";
+// ------------------------------------------------------------------------------------------------------------------------------------------------------------
+// UDP Setup and Settings
+
+// Timer Settings  
+// ------------------------------------------------------------------------------------------------------------------------------------------------------------
+  unsigned long previous_value_time = 0, this_value_time = 0;
+  unsigned long previousMillis_udp = 0;           long interval_udp = 10000;            // Send UDP Packet Every 60 Seconds
+// ------------------------------------------------------------------------------------------------------------------------------------------------------------
+// Timer Settings
+
+
+#include <DallasTemperature.h>
+#include <OneWire.h>
+OneWire  ds(D4);  // on pin D4 (a 4.7K resistor is necessary)
+float celsius, fahrenheit;
+
+
+// Setup WIFI
+// ------------------------------------------------------------------------------------------------------------------------------------------------------------
+#include <WiFiClient.h>
+const char* ssid = "home-lan-24g";
+const char* password = "jennifer";
+// ------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 
+ 
+void setup() {
+  pinMode(2, OUTPUT);
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  Serial.println("");
+    while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
+    Serial.println(""); Serial.print("Connected to "); Serial.println(ssid); Serial.print("IP address: "); Serial.println(WiFi.localIP());
+    hardware_id = WiFi.hostname().c_str();
+}
+
+void loop(){
+              unsigned long currentMillis = millis();
+
+              if (currentMillis - previousMillis_udp >= interval_udp) {
+                                                                          previousMillis_udp = currentMillis;
+                                                                            get_ds18b20_temp_2();
+                                                                            char string_t[10] = "---"; dtostrf(celsius, 5,2, string_t);
+                                                                            long rssi = WiFi.RSSI(); char rssi_buffer[5];
+                  
+                                                                              sprintf(udp_packet, "#,%s,%ld,D1.DS18B20,%s,#", hardware_id, rssi, string_t);
+                                                                                Serial.print("UDP->");
+                                                                                    IPAddress broadcast=IPAddress(WiFi.localIP()[0],WiFi.localIP()[1],WiFi.localIP()[2],255);
+                                                                                Serial.print(udp_packet);
+                                                                                  Udp.beginPacket(broadcast, localPort);
+                                                                                  Udp.write(udp_packet);
+                                                                                  Udp.endPacket();
+                                                                                Serial.println("<-Done.");
+                                                                      }
+}
+
+
+
+
+
+
+void get_ds18b20_temp_2(){
+Serial.println("Firing Temp Sensor");
+
+byte i;
+  byte present = 0;
+  byte type_s;
+  byte data[12];
+  byte addr[8];
+//  float celsius, fahrenheit;
+ 
+  if ( !ds.search(addr)) { ds.reset_search(); delay(1000); return; }
+  
+  if ( OneWire::crc8(addr, 7) != addr[7] ){ Serial.println("CRC is not valid!"); return;}
+  
+      Serial.println("Working");
+ 
+            switch (addr[0]) 
+              {
+                case 0x10: type_s = 1; break;
+                case 0x28: type_s = 0; break;
+                case 0x22: type_s = 0; break;
+                default:
+                  Serial.println("Device is not a DS18x20 family device.");
+                  return;
+              } 
+ 
+      ds.reset(); ds.select(addr); ds.write(0x44, 1); delay(1000); present = ds.reset(); ds.select(addr); ds.write(0xBE);
+ 
+          for ( i = 0; i < 9; i++) {data[i] = ds.read();}
+ 
+                int16_t raw = (data[1] << 8) | data[0];
+                
+          if (type_s) { raw = raw << 3; 
+          if (data[7] == 0x10){raw = (raw & 0xFFF0) + 12 - data[6];}
+              } else {
+                        byte cfg = (data[4] & 0x60);
+                      if (cfg == 0x00) raw = raw & ~7;  // 9 bit resolution, 93.75 ms
+                      else if (cfg == 0x20) raw = raw & ~3; // 10 bit res, 187.5 ms
+                      else if (cfg == 0x40) raw = raw & ~1; // 11 bit res, 375 ms
+              }
+  
+                    celsius = (float)raw / 16.0;
+                    fahrenheit = celsius * 1.8 + 32.0;
+  
+                    Serial.print("  Temperature = "); Serial.print(celsius); Serial.print(" Celsius, "); Serial.print(fahrenheit); Serial.println(" Fahrenheit");
+  
+}
